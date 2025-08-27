@@ -82,211 +82,37 @@ build_and_deploy_app() {
     # Create and run the pipeline
     TIMESTAMP=$(date +%s)
     IMAGE_TAG="demo-v$TIMESTAMP"
+    PIPELINE_NAME="slsa-app-deploy-$TIMESTAMP"
     
-    cat <<EOF | kubectl apply -f -
-apiVersion: tekton.dev/v1
-kind: PipelineRun
-metadata:
-  name: slsa-app-deploy-$TIMESTAMP
-  namespace: default
-  labels:
-    slsa-demo: "true"
-    deployment: "sample-app"
-spec:
-  serviceAccountName: $SERVICE_ACCOUNT
-  pipelineSpec:
-    params:
-    - name: IMAGE_NAME
-      description: Name of the application image
-      default: "localhost:5001/tekton-slsa-demo"
-    - name: IMAGE_TAG
-      description: Tag for the application image
-      default: "$IMAGE_TAG"
-    - name: SOURCE_URL
-      description: Source repository URL
-      default: "https://github.com/waveywaves/tekton-slsa-demo"
-    results:
-    - name: IMAGE_URL
-      description: URL of the built image
-      value: \$(tasks.build-app.results.IMAGE_URL)
-    - name: IMAGE_DIGEST
-      description: Digest of the built image
-      value: \$(tasks.build-app.results.IMAGE_DIGEST)
-    workspaces:
-    - name: shared-data
-      description: Shared workspace for source code
-    tasks:
-    - name: prepare-source
-      taskSpec:
-        workspaces:
-        - name: source
-        steps:
-        - name: setup
-          image: alpine/git:2.36.3
-          workingDir: \$(workspaces.source.path)
-          script: |
-            #!/bin/sh
-            set -ex
-            echo "=== Preparing source code ==="
-            # Copy actual source files if they exist, otherwise create demo app
-            if [ -d "/workspace/source/cmd" ]; then
-              echo "Using existing source code"
-            else
-              echo "Creating demo Go application..."
-              mkdir -p cmd
-              cp -r /workspace/source/* . 2>/dev/null || true
-            fi
-            echo "Source preparation completed"
-      workspaces:
-      - name: source
-        workspace: shared-data
-    - name: source-scan
-      runAfter: ["prepare-source"]
-      taskSpec:
-        steps:
-        - name: scan
-          image: alpine:3.18
-          script: |
-            #!/bin/sh
-            set -ex
-            echo "🔍 Scanning source code for vulnerabilities..."
-            echo "Source URL: \$(params.SOURCE_URL)"
-            echo "Performing security checks..."
-            sleep 2
-            echo "✅ Source scan completed - no critical issues found"
-        params:
-        - name: SOURCE_URL
-      params:
-      - name: SOURCE_URL
-        value: \$(params.SOURCE_URL)
-    - name: build-app
-      runAfter: ["source-scan"]
-      taskRef:
-        name: $BUILD_TASK
-      params:
-      - name: IMAGE_NAME
-        value: \$(params.IMAGE_NAME)
-      - name: IMAGE_TAG
-        value: \$(params.IMAGE_TAG)
-      - name: SOURCE_URL
-        value: \$(params.SOURCE_URL)
-      workspaces:
-      - name: source
-        workspace: shared-data
-    - name: deploy-to-cluster
-      runAfter: ["build-app"]
-      taskSpec:
-        params:
-        - name: IMAGE_URL
-        - name: IMAGE_DIGEST
-        steps:
-        - name: deploy
-          image: bitnami/kubectl:1.28
-          script: |
-            #!/bin/bash
-            set -ex
-            echo "🚀 Deploying application to Kubernetes..."
-            
-            IMAGE_WITH_DIGEST="\$(params.IMAGE_URL)@\$(params.IMAGE_DIGEST)"
-            echo "Deploying image: \$IMAGE_WITH_DIGEST"
-            
-            # Create deployment
-            cat <<DEPLOY | kubectl apply -f -
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: tekton-slsa-demo
-              namespace: default
-              labels:
-                app: tekton-slsa-demo
-                slsa-demo: "true"
-            spec:
-              replicas: 2
-              selector:
-                matchLabels:
-                  app: tekton-slsa-demo
-              template:
-                metadata:
-                  labels:
-                    app: tekton-slsa-demo
-                  annotations:
-                    slsa.dev/provenance-available: "true"
-                    tekton.dev/signed: "true"
-                spec:
-                  containers:
-                  - name: app
-                    image: \$IMAGE_WITH_DIGEST
-                    ports:
-                    - containerPort: 8080
-                    env:
-                    - name: APP_VERSION
-                      value: "$IMAGE_TAG"
-                    - name: SIGNING_METHOD
-                      value: "$SIGNING_METHOD"
-                    resources:
-                      requests:
-                        memory: "64Mi"
-                        cpu: "50m"
-                      limits:
-                        memory: "128Mi"
-                        cpu: "100m"
-                    readinessProbe:
-                      httpGet:
-                        path: /health
-                        port: 8080
-                      initialDelaySeconds: 5
-                      periodSeconds: 10
-                    livenessProbe:
-                      httpGet:
-                        path: /health
-                        port: 8080
-                      initialDelaySeconds: 15
-                      periodSeconds: 20
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: tekton-slsa-demo
-              namespace: default
-              labels:
-                app: tekton-slsa-demo
-            spec:
-              selector:
-                app: tekton-slsa-demo
-              ports:
-              - port: 8080
-                targetPort: 8080
-                name: http
-              type: ClusterIP
-            DEPLOY
-            
-            echo "✅ Application deployed successfully"
-            
-            # Wait for deployment to be ready
-            kubectl rollout status deployment/tekton-slsa-demo --timeout=120s
-            
-            echo "=== Deployment Status ==="
-            kubectl get pods -l app=tekton-slsa-demo
-            kubectl get svc tekton-slsa-demo
-      params:
-      - name: IMAGE_URL
-        value: \$(tasks.build-app.results.IMAGE_URL)
-      - name: IMAGE_DIGEST
-        value: \$(tasks.build-app.results.IMAGE_DIGEST)
-  params:
-  - name: IMAGE_NAME
-    value: "localhost:5001/tekton-slsa-demo"
-  - name: IMAGE_TAG
-    value: "$IMAGE_TAG"
-  - name: SOURCE_URL
-    value: "https://github.com/waveywaves/tekton-slsa-demo"
-  workspaces:
-  - name: shared-data
-    persistentVolumeClaim:
-      claimName: demo-workspace-pvc
-EOF
-
-    echo "PipelineRun created: slsa-app-deploy-$TIMESTAMP"
+    # Get the directory where this script is located
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TEMPLATE_FILE="$SCRIPT_DIR/../templates/deployment-pipelinerun-template.yaml"
+    
+    if [ ! -f "$TEMPLATE_FILE" ]; then
+        echo "Error: PipelineRun template file not found at $TEMPLATE_FILE"
+        exit 1
+    fi
+    
+    # Create temporary file with customized values
+    TEMP_PIPELINE="/tmp/deployment-pipelinerun-$TIMESTAMP.yaml"
+    cp "$TEMPLATE_FILE" "$TEMP_PIPELINE"
+    
+    # Replace placeholders with actual values
+    sed -i.bak \
+        -e "s/PIPELINE_RUN_NAME/$PIPELINE_NAME/g" \
+        -e "s/SERVICE_ACCOUNT/$SERVICE_ACCOUNT/g" \
+        -e "s/BUILD_TASK_NAME/$BUILD_TASK/g" \
+        -e "s/IMAGE_TAG_VALUE/$IMAGE_TAG/g" \
+        -e "s/SIGNING_METHOD_VALUE/$SIGNING_METHOD/g" \
+        "$TEMP_PIPELINE"
+    
+    # Apply the customized PipelineRun
+    kubectl apply -f "$TEMP_PIPELINE"
+    
+    # Clean up temporary files
+    rm -f "$TEMP_PIPELINE" "$TEMP_PIPELINE.bak"
+    
+    echo "PipelineRun created: $PIPELINE_NAME"
     return 0
 }
 
