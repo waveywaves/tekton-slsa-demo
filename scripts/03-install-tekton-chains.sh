@@ -109,6 +109,13 @@ verify_installation() {
 create_sample_slsa_task() {
     echo "Creating sample SLSA-compliant Task..."
     
+    # Wait for Tekton CRDs to be available
+    echo "Waiting for Tekton Task CRD to be available..."
+    kubectl wait --for condition=established --timeout=60s crd/tasks.tekton.dev || {
+        echo "Warning: Tekton Task CRD not available yet, skipping task creation"
+        return 0
+    }
+    
     cat << EOF | kubectl apply -f -
 apiVersion: tekton.dev/v1
 kind: Task
@@ -148,7 +155,7 @@ spec:
       # - buildpacks for language-specific builds
       
       # Simulate image creation and get digest
-      IMAGE_DIGEST="sha256:$(echo -n \$(params.IMAGE_URL) | sha256sum | cut -d' ' -f1)"
+      IMAGE_DIGEST="sha256:\$(echo -n "\$(params.IMAGE_URL)" | sha256sum | cut -d' ' -f1)"
       
       echo "Built image with digest: \$IMAGE_DIGEST"
       
@@ -184,10 +191,10 @@ spec:
       {
         "bomFormat": "CycloneDX",
         "specVersion": "1.4",
-        "serialNumber": "urn:uuid:$(uuidgen || echo 12345678-1234-5678-9012-123456789012)",
+        "serialNumber": "urn:uuid:\$(uuidgen || echo 12345678-1234-5678-9012-123456789012)",
         "version": 1,
         "metadata": {
-          "timestamp": "$(date -Iseconds)",
+          "timestamp": "\$(date -Iseconds)",
           "tools": [
             {
               "vendor": "tekton-demo",
