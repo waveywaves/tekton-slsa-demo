@@ -1,0 +1,21 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: slsa-demo-run-sample
+  namespace: default
+  labels:
+    slsa-demo: "true"
+spec:
+  pipelineRef:
+    name: slsa-demo-pipeline
+  params:
+  - name: IMAGE_NAME
+    value: "kind-registry:5000/tekton-slsa-demo"
+  - name: IMAGE_TAG
+    value: "latest"
+  - name: SOURCE_URL
+    value: "https://github.com/waveywaves/tekton-slsa-demo"
+  workspaces:
+  - name: shared-data
+    persistentVolumeClaim:
+      claimName: demo-workspace-pvc

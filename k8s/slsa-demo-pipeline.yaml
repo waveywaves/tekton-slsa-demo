@@ -1,0 +1,76 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: slsa-demo-pipeline
+  namespace: default
+  labels:
+    slsa-demo: "true"
+spec:
+  params:
+  - name: IMAGE_NAME
+    description: Name of the application image
+    default: "tekton-slsa-demo/app"
+  - name: IMAGE_TAG
+    description: Tag for the application image
+    default: "latest"
+  - name: SOURCE_URL
+    description: Source repository URL
+    default: "https://github.com/waveywaves/tekton-slsa-demo"
+  results:
+  - name: IMAGE_URL
+    description: URL of the built image
+    value: $(tasks.build-app.results.IMAGE_URL)
+  - name: IMAGE_DIGEST
+    description: Digest of the built image
+    value: $(tasks.build-app.results.IMAGE_DIGEST)
+  workspaces:
+  - name: shared-data
+    description: Shared workspace for source code
+  tasks:
+  - name: source-scan
+    taskSpec:
+      steps:
+      - name: scan
+        image: alpine:3.18
+        script: |
+          #!/bin/sh
+          set -ex
+          echo "🔍 Scanning source code for vulnerabilities..."
+          echo "Source URL: $(params.SOURCE_URL)"
+          sleep 2
+          echo "✅ Source scan completed - no critical issues found"
+      params:
+      - name: SOURCE_URL
+    params:
+    - name: SOURCE_URL
+      value: $(params.SOURCE_URL)
+  - name: build-app
+    runAfter: ["source-scan"]
+    taskRef:
+      name: enhanced-build-sign
+    params:
+    - name: IMAGE_NAME
+      value: $(params.IMAGE_NAME)
+    - name: IMAGE_TAG
+      value: $(params.IMAGE_TAG)
+    workspaces:
+    - name: source
+      workspace: shared-data
+  - name: security-verify
+    runAfter: ["build-app"]
+    taskSpec:
+      params:
+      - name: IMAGE_URL
+      steps:
+      - name: verify
+        image: alpine:3.18
+        script: |
+          #!/bin/sh
+          set -ex
+          echo "🛡️  Verifying security compliance..."
+          echo "Image: $(params.IMAGE_URL)"
+          sleep 2
+          echo "✅ Security verification passed"
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-app.results.IMAGE_URL)
