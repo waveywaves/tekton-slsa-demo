@@ -9,7 +9,7 @@ spec:
   params:
   - name: IMAGE_NAME
     description: Name of the image to build
-    default: "kind-registry:5000/tekton-slsa-demo"
+    default: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     description: Tag for the image
     default: "latest"
@@ -67,7 +67,6 @@ spec:
       FROM golang:1.21-alpine AS builder
       WORKDIR /app
       COPY go.mod ./
-      COPY go.su[m] ./
       RUN go mod download
       COPY cmd/ ./cmd/
       RUN CGO_ENABLED=0 go build -o app ./cmd/main.go
@@ -94,34 +93,27 @@ spec:
       IMAGE_URL="$(params.IMAGE_NAME):$(params.IMAGE_TAG)"
       echo "Building image: $IMAGE_URL"
       
-      # Create docker config for insecure registry
-      mkdir -p /kaniko/.docker
-      cat > /kaniko/.docker/config.json << 'DOCKERCONFIG'
-      {
-        "auths": {},
-        "insecureRegistries": ["kind-registry:5000"]
-      }
-      DOCKERCONFIG
+      # Build with Kaniko for ttl.sh registry
+      echo "Starting Kaniko build and push to ttl.sh..."
+      echo "Building image: $IMAGE_URL"
       
-      # Build with Kaniko for reproducibility
+      # Build and push with Kaniko to ttl.sh (external registry)
       /kaniko/executor \
         --dockerfile=Dockerfile \
         --destination=$IMAGE_URL \
-        --insecure \
-        --skip-tls-verify \
         --context=. \
         --digest-file=/tmp/digest \
-        --image-name-with-digest-file=/tmp/image-digest || true
+        --image-name-with-digest-file=/tmp/image-digest \
+        --verbosity=info
         
-      # Handle registry availability
+      # Verify the build succeeded
       if [ ! -f /tmp/digest ]; then
-        echo "Registry not available, generating simulated results"
-        IMAGE_DIGEST="sha256:$(echo -n "$IMAGE_URL$(date)" | sha256sum | awk '{print $1}')"
-        echo -n "$IMAGE_DIGEST" > /tmp/digest
-        echo -n "$IMAGE_URL@$IMAGE_DIGEST" > /tmp/image-digest
-      else
-        IMAGE_DIGEST=$(cat /tmp/digest)
+        echo "ERROR: Kaniko build failed - no digest file created"
+        exit 1
       fi
+      
+      IMAGE_DIGEST=$(cat /tmp/digest)
+      echo "✅ Build successful with digest: $IMAGE_DIGEST"
       
       echo "=== Build Results ==="
       echo "Image URL: $IMAGE_URL"

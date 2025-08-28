@@ -10,7 +10,7 @@ spec:
   params:
   - name: IMAGE_NAME
     description: Name of the image to build
-    default: "kind-registry:5000/tekton-slsa-demo"
+    default: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     description: Tag for the image
     default: "keyless-signed"
@@ -71,7 +71,6 @@ spec:
       FROM golang:1.21-alpine AS builder
       WORKDIR /app
       COPY go.mod ./
-      COPY go.sum ./
       RUN go mod download
       COPY cmd/ ./cmd/
       RUN CGO_ENABLED=0 go build -o app ./cmd/main.go

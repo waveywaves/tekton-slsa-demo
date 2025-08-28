@@ -13,7 +13,7 @@ spec:
     params:
     - name: IMAGE_NAME
       description: Name of the application image
-      default: "kind-registry:5000/tekton-slsa-demo"
+      default: "ttl.sh/tekton-slsa-demo"
     - name: IMAGE_TAG
       description: Tag for the application image
       default: "IMAGE_TAG_VALUE"
@@ -131,6 +131,7 @@ spec:
                   containers:
                   - name: app
                     image: $IMAGE_WITH_DIGEST
+                    imagePullPolicy: Always
                     ports:
                     - containerPort: 8080
                     env:
@@ -178,7 +179,7 @@ spec:
             echo "✅ Application deployed successfully"
             
             # Wait for deployment to be ready
-            kubectl rollout status deployment/tekton-slsa-demo --timeout=120s
+            kubectl rollout status deployment/tekton-slsa-demo --timeout=360s
             
             echo "=== Deployment Status ==="
             kubectl get pods -l app=tekton-slsa-demo
@@ -190,7 +191,7 @@ spec:
         value: $(tasks.build-app.results.IMAGE_DIGEST)
   params:
   - name: IMAGE_NAME
-    value: "kind-registry:5000/tekton-slsa-demo"
+    value: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     value: "IMAGE_TAG_VALUE"
   - name: SOURCE_URL

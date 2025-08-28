@@ -10,7 +10,7 @@ spec:
     name: slsa-demo-pipeline
   params:
   - name: IMAGE_NAME
-    value: "kind-registry:5000/tekton-slsa-demo"
+    value: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     value: "latest"
   - name: SOURCE_URL
