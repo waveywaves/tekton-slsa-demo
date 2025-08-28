@@ -53,7 +53,7 @@ create_trusted_resource_keys() {
     
     # Generate cosign keypair specifically for trusted resources
     echo "Generating trusted resource signing keys..."
-    echo "" | cosign generate-key-pair
+    COSIGN_PASSWORD="" cosign generate-key-pair
     
     if [[ ! -f cosign.key ]] || [[ ! -f cosign.pub ]]; then
         echo "Error: Failed to generate cosign keypair for trusted resources"
@@ -158,8 +158,9 @@ EOF
 
     # Sign the Task with cosign
     echo "Signing the trusted Task..."
-    cosign sign-blob \
+    COSIGN_PASSWORD="" cosign sign-blob \
         --key /tmp/trusted-resource.key \
+        --yes \
         --output-signature /tmp/trusted-task.yaml.sig \
         /tmp/trusted-task.yaml
     
@@ -196,7 +197,6 @@ spec:
       secretRef:
         name: trusted-resource-verification-keys
         namespace: tekton-pipelines
-        key: cosign.pub
   mode: enforce
 EOF
 
@@ -227,7 +227,7 @@ spec:
   - name: IMAGE_NAME
     description: "Name of the container image"
     type: string
-    default: "localhost:5001/tekton-slsa-demo"
+    default: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     description: "Tag for the container image"
     type: string
@@ -259,7 +259,7 @@ spec:
       operator: in
       values: ["passed", "warning"]
     taskRef:
-      name: enhanced-build-sign
+      name: keyless-build-sign
       kind: Task
     params:
     - name: IMAGE_NAME
@@ -295,8 +295,9 @@ EOF
 
     # Sign the Pipeline
     echo "Signing the trusted Pipeline..."
-    cosign sign-blob \
+    COSIGN_PASSWORD="" cosign sign-blob \
         --key /tmp/trusted-resource.key \
+        --yes \
         --output-signature /tmp/trusted-pipeline.yaml.sig \
         /tmp/trusted-pipeline.yaml
     
@@ -349,7 +350,7 @@ spec:
   - name: SOURCE_URL
     value: "https://github.com/waveywaves/tekton-slsa-demo"
   - name: IMAGE_NAME
-    value: "localhost:5001/tekton-slsa-demo"
+    value: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     value: "trusted-$TIMESTAMP"
   workspaces:
