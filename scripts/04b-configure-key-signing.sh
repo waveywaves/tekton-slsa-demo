@@ -89,10 +89,10 @@ configure_key_signing() {
     kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.pipelinerun.signer": "x509"}}'
     kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.oci.signer": "x509"}}'
     
-    # Set storage format to OCI for better attestation handling
-    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.taskrun.format": "in-toto"}}'
+    # Set storage format to use SLSA and simplesigning
+    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.taskrun.format": "slsa/v1"}}'
     kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.pipelinerun.format": "slsa/v1"}}'
-    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.oci.format": "cosign"}}'
+    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.oci.format": "simplesigning"}}'
     
     echo "Chains configuration updated for x509-based signing"
 }
@@ -128,7 +128,13 @@ verify_signing_config() {
 create_enhanced_build_task() {
     echo "Creating enhanced build task with real Docker builds..."
     
-    cat << EOF | kubectl apply -f -
+    # Check if the existing enhanced-build-task.yaml exists
+    if [[ -f "k8s/enhanced-build-task.yaml" ]]; then
+        echo "Using existing enhanced build task from k8s/enhanced-build-task.yaml"
+        kubectl apply -f k8s/enhanced-build-task.yaml
+    else
+        echo "Creating simple enhanced build task..."
+        kubectl apply -f - << 'EOF'
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
@@ -140,13 +146,10 @@ spec:
   params:
   - name: IMAGE_NAME
     description: Name of the image to build
-    default: "kind-registry:5000/tekton-slsa-demo"
+    default: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     description: Tag for the image
     default: "latest"
-  - name: SOURCE_URL
-    description: Git repository URL
-    default: "https://github.com/waveywaves/tekton-slsa-demo"
   workspaces:
   - name: source
     description: Workspace containing the source code
@@ -154,28 +157,25 @@ spec:
   - name: IMAGE_URL
     description: URL of the built image with tag
   - name: IMAGE_DIGEST
-    description: Digest of the built image  
-  - name: ATTESTATION_URL
-    description: URL where attestation will be stored
+    description: Digest of the built image
   steps:
-  - name: fetch-source
-    image: alpine/git:2.36.3
-    workingDir: \$(workspaces.source.path)
+  - name: build-image
+    image: gcr.io/kaniko-project/executor:v1.15.0-debug
+    workingDir: $(workspaces.source.path)
     script: |
-      #!/bin/sh
+      #!/busybox/sh
       set -ex
-      echo "=== Fetching Source Code ==="
-      # For demo purposes, copy the current directory structure
-      # In a real pipeline, this would clone from git
-      if [ ! -f "go.mod" ]; then
-        echo "Creating demo Go application structure..."
+      
+      echo "=== Building Container Image ==="
+      IMAGE_URL="$(params.IMAGE_NAME):$(params.IMAGE_TAG)"
+      echo "Building image: $IMAGE_URL"
+      
+      # Create simple Go app if it doesn't exist
+      if [ ! -f "cmd/main.go" ]; then
         mkdir -p cmd
-        cat > go.mod << 'GOMOD'
-module github.com/waveywaves/tekton-slsa-demo
-go 1.21
-GOMOD
-
-        cat > cmd/main.go << 'MAIN'
+        echo 'module github.com/waveywaves/tekton-slsa-demo' > go.mod
+        echo 'go 1.21' >> go.mod
+        cat > cmd/main.go << 'GOCODE'
 package main
 import (
     "fmt"
@@ -189,9 +189,8 @@ func main() {
     log.Println("Starting server on :8080")
     log.Fatal(http.ListenAndServe(":8080", nil))
 }
-MAIN
-
-        cat > Dockerfile << 'DOCKERFILE'
+GOCODE
+        cat > Dockerfile << 'DOCKERCODE'
 FROM golang:1.21-alpine AS builder
 WORKDIR /app
 COPY go.mod ./
@@ -203,102 +202,40 @@ COPY --from=builder /app/app .
 USER appuser
 EXPOSE 8080
 CMD ["./app"]
-DOCKERFILE
+DOCKERCODE
       fi
-      echo "Source code ready for build"
-  - name: build-image
-    image: gcr.io/kaniko-project/executor:v1.15.0-debug
-    workingDir: \$(workspaces.source.path)
-    env:
-    - name: DOCKER_CONFIG
-      value: /kaniko/.docker
-    script: |
-      #!/busybox/sh
-      set -ex
       
-      echo "=== Building Container Image ==="
-      IMAGE_URL="\$(params.IMAGE_NAME):\$(params.IMAGE_TAG)"
-      echo "Building image: \$IMAGE_URL"
-      
-      # Create docker config for insecure registry
-      mkdir -p /kaniko/.docker
-      cat > /kaniko/.docker/config.json << 'DOCKERCONFIG'
-      {
-        "auths": {},
-        "insecureRegistries": ["kind-registry:5000"]
-      }
-DOCKERCONFIG
-      
-      # Build with Kaniko for reproducibility
+      # Build with Kaniko
       /kaniko/executor \
         --dockerfile=Dockerfile \
-        --destination=\$IMAGE_URL \
-        --insecure \
-        --skip-tls-verify \
+        --destination=$IMAGE_URL \
         --context=. \
         --digest-file=/tmp/digest \
         --image-name-with-digest-file=/tmp/image-digest || true
-        
-      # Handle the case where the registry might not be ready
+      
+      # Handle registry unavailability
       if [ ! -f /tmp/digest ]; then
-        echo "Registry not available, generating simulated results for demo"
-        IMAGE_DIGEST="sha256:\$(echo -n "\$IMAGE_URL\$(date)" | sha256sum | awk '{print \$1}')"
-        echo -n "\$IMAGE_DIGEST" > /tmp/digest
-        echo -n "\$IMAGE_URL@\$IMAGE_DIGEST" > /tmp/image-digest
+        echo "Registry not available, generating simulated results"
+        IMAGE_DIGEST="sha256:$(echo -n "${IMAGE_URL}$(date)" | sha256sum | awk '{print $1}')"
+        echo -n "$IMAGE_DIGEST" > /tmp/digest
+        echo -n "${IMAGE_URL}@${IMAGE_DIGEST}" > /tmp/image-digest
       else
-        IMAGE_DIGEST=\$(cat /tmp/digest)
+        IMAGE_DIGEST=$(cat /tmp/digest)
       fi
       
       echo "=== Build Results ==="
-      echo "Image URL: \$IMAGE_URL"
-      echo "Image Digest: \$IMAGE_DIGEST"
+      echo "Image URL: $IMAGE_URL"
+      echo "Image Digest: $IMAGE_DIGEST"
       
-      # Write results that Chains will capture and sign
-      echo -n "\$IMAGE_URL" > \$(results.IMAGE_URL.path)
-      echo -n "\$IMAGE_DIGEST" > \$(results.IMAGE_DIGEST.path)
-      echo -n "\$IMAGE_URL@\$IMAGE_DIGEST" > \$(results.ATTESTATION_URL.path)
+      # Write results for Chains to sign
+      echo -n "$IMAGE_URL" > $(results.IMAGE_URL.path)
+      echo -n "$IMAGE_DIGEST" > $(results.IMAGE_DIGEST.path)
       
-      echo "=== Build completed successfully! ==="
-  - name: generate-sbom
-    image: alpine:3.18
-    workingDir: \$(workspaces.source.path)
-    script: |
-      #!/bin/sh
-      set -ex
-      
-      echo "=== Generating Software Bill of Materials (SBOM) ==="
-      
-      # Create SPDX-compatible SBOM
-      cat > /tmp/sbom.json << SBOM
-      {
-        "spdxVersion": "SPDX-2.3",
-        "dataLicense": "CC0-1.0",
-        "SPDXID": "SPDXRef-DOCUMENT",
-        "name": "tekton-slsa-demo-sbom",
-        "documentNamespace": "https://github.com/waveywaves/tekton-slsa-demo",
-        "creationInfo": {
-          "created": "\$(date -Iseconds)",
-          "creators": ["Tool: tekton-chains"]
-        },
-        "packages": [
-          {
-            "SPDXID": "SPDXRef-Package",
-            "name": "tekton-slsa-demo",
-            "downloadLocation": "NOASSERTION",
-            "filesAnalyzed": false,
-            "supplier": "NOASSERTION",
-            "copyrightText": "NOASSERTION"
-          }
-        ]
-      }
-SBOM
-      
-      echo "SBOM generated:"
-      cat /tmp/sbom.json
-      echo "SBOM stored for attestation inclusion"
+      echo "✅ Build completed successfully!"
 EOF
-
-    echo "Enhanced build task with real Docker builds created successfully"
+    fi
+    
+    echo "Enhanced build task created successfully"
 }
 
 # Function to test key-based signing
@@ -332,7 +269,7 @@ spec:
     name: enhanced-build-sign
   params:
   - name: IMAGE_NAME
-    value: "kind-registry:5000/tekton-slsa-demo"
+    value: "ttl.sh/tekton-slsa-demo"
   - name: IMAGE_TAG
     value: "v1.0.0-$(date +%s)"
   workspaces:

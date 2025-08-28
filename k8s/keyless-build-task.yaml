@@ -98,12 +98,11 @@ spec:
       IMAGE_URL="$(params.IMAGE_NAME):$(params.IMAGE_TAG)"
       echo "Building image: $IMAGE_URL"
       
-      # Create docker config for insecure registry
+      # Create docker config for ttl.sh registry
       mkdir -p /kaniko/.docker
       cat > /kaniko/.docker/config.json << 'DOCKERCONFIG'
       {
-        "auths": {},
-        "insecureRegistries": ["kind-registry:5000"]
+        "auths": {}
       }
       DOCKERCONFIG
       

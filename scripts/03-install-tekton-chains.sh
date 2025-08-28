@@ -73,7 +73,7 @@ configure_slsa_compliance() {
     
     # Configure storage format
     echo "Configuring storage format..."
-    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"storage.oci.repository": "ttl.sh/tekton-chains-demo"}}'
+    kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"storage.oci.repository": "ttl.sh/tekton-slsa-demo"}}'
     
     # Enable signing of OCI images
     kubectl patch configmap chains-config -n tekton-chains -p='{"data":{"artifacts.oci.format": "simplesigning"}}'
@@ -275,7 +275,7 @@ create_registry_secret() {
     # In a real scenario, you would create secrets for your container registry
     
     echo "Using ttl.sh temporary registry for demo purposes"
-    echo "Images will be stored temporarily at ttl.sh/tekton-chains-demo/"
+    echo "Images will be stored temporarily at ttl.sh/tekton-slsa-demo/"
     
     # Create a dummy secret for completeness (not actually used by ttl.sh)
     kubectl create secret generic registry-secret \

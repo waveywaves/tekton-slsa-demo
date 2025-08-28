@@ -48,6 +48,8 @@ enable_trusted_resources() {
 create_trusted_resource_keys() {
     echo "Creating keys for signing trusted resources..."
     
+    # Save current directory
+    ORIGINAL_DIR=$(pwd)
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
     
@@ -81,8 +83,8 @@ create_trusted_resource_keys() {
     echo "Public key for trusted resources:"
     cat cosign.pub
     
-    # Clean up temporary directory
-    cd /
+    # Clean up temporary directory and return to original directory
+    cd "$ORIGINAL_DIR"
     rm -rf "$TEMP_DIR"
     
     echo "✅ Trusted resource keys created and stored"
@@ -92,69 +94,16 @@ create_trusted_resource_keys() {
 create_signed_task() {
     echo "Creating and signing a trusted Task..."
     
-    # Create a sample trusted Task
-    cat > /tmp/trusted-task.yaml << 'EOF'
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: trusted-security-scan
-  namespace: default
-  labels:
-    trusted-resource: "true"
-    security-level: "high"
-spec:
-  description: "A trusted task for security scanning with verified provenance"
-  params:
-  - name: SOURCE_URL
-    description: "URL of the source to scan"
-    type: string
-    default: "https://github.com/waveywaves/tekton-slsa-demo"
-  - name: SCAN_TYPE
-    description: "Type of security scan to perform"
-    type: string
-    default: "vulnerability"
-  results:
-  - name: SCAN_RESULT
-    description: "Result of the security scan"
-  - name: CRITICAL_ISSUES
-    description: "Number of critical security issues found"
-  steps:
-  - name: security-scan
-    image: alpine:3.18
-    script: |
-      #!/bin/sh
-      set -ex
-      
-      echo "=== Trusted Security Scan ==="
-      echo "Source URL: $(params.SOURCE_URL)"
-      echo "Scan Type: $(params.SCAN_TYPE)"
-      echo "Task is cryptographically signed and verified"
-      
-      # Simulate comprehensive security scanning
-      echo "1. Dependency vulnerability scan..."
-      sleep 2
-      echo "2. Static code analysis..."
-      sleep 2
-      echo "3. License compliance check..."
-      sleep 1
-      echo "4. Secret detection scan..."
-      sleep 1
-      
-      # Generate scan results
-      CRITICAL_COUNT=0
-      SCAN_STATUS="passed"
-      
-      echo "=== Security Scan Results ==="
-      echo "Status: $SCAN_STATUS"
-      echo "Critical issues: $CRITICAL_COUNT"
-      echo "Scan completed by trusted, signed Task"
-      
-      # Write results
-      echo -n "$SCAN_STATUS" > $(results.SCAN_RESULT.path)
-      echo -n "$CRITICAL_COUNT" > $(results.CRITICAL_ISSUES.path)
-      
-      echo "✅ Trusted security scan completed"
-EOF
+    # Use the Task YAML from k8s directory
+    TRUSTED_TASK_YAML="k8s/trusted-security-scan-task.yaml"
+    
+    if [[ ! -f "$TRUSTED_TASK_YAML" ]]; then
+        echo "Error: Trusted task YAML not found at $TRUSTED_TASK_YAML"
+        exit 1
+    fi
+    
+    # Copy to temp location for signing
+    cp "$TRUSTED_TASK_YAML" /tmp/trusted-task.yaml
 
     # Sign the Task with cosign
     echo "Signing the trusted Task..."
@@ -207,91 +156,16 @@ EOF
 create_signed_pipeline() {
     echo "Creating and signing a trusted Pipeline..."
     
-    # Create a sample trusted Pipeline
-    cat > /tmp/trusted-pipeline.yaml << 'EOF'
-apiVersion: tekton.dev/v1
-kind: Pipeline
-metadata:
-  name: trusted-slsa-pipeline
-  namespace: default
-  labels:
-    trusted-resource: "true"
-    security-level: "high"
-spec:
-  description: "A trusted pipeline with signed Tasks for SLSA compliance"
-  params:
-  - name: SOURCE_URL
-    description: "URL of the source repository"
-    type: string
-    default: "https://github.com/waveywaves/tekton-slsa-demo"
-  - name: IMAGE_NAME
-    description: "Name of the container image"
-    type: string
-    default: "ttl.sh/tekton-slsa-demo"
-  - name: IMAGE_TAG
-    description: "Tag for the container image"
-    type: string
-    default: "trusted"
-  workspaces:
-  - name: shared-workspace
-    description: "Shared workspace for pipeline tasks"
-  results:
-  - name: IMAGE_URL
-    description: "URL of the built image"
-    value: $(tasks.build.results.IMAGE_URL)
-  - name: SECURITY_SCAN_RESULT
-    description: "Result of security scanning"
-    value: $(tasks.security-scan.results.SCAN_RESULT)
-  tasks:
-  - name: security-scan
-    taskRef:
-      name: trusted-security-scan
-      kind: Task
-    params:
-    - name: SOURCE_URL
-      value: $(params.SOURCE_URL)
-    - name: SCAN_TYPE
-      value: "comprehensive"
-  - name: build
-    runAfter: ["security-scan"]
-    when:
-    - input: "$(tasks.security-scan.results.SCAN_RESULT)"
-      operator: in
-      values: ["passed", "warning"]
-    taskRef:
-      name: keyless-build-sign
-      kind: Task
-    params:
-    - name: IMAGE_NAME
-      value: $(params.IMAGE_NAME)
-    - name: IMAGE_TAG
-      value: $(params.IMAGE_TAG)
-    workspaces:
-    - name: source
-      workspace: shared-workspace
-  - name: verify-build
-    runAfter: ["build"]
-    taskSpec:
-      params:
-      - name: IMAGE_URL
-      - name: SCAN_RESULT
-      steps:
-      - name: verify
-        image: alpine:3.18
-        script: |
-          #!/bin/sh
-          set -ex
-          echo "=== Verifying Trusted Build ==="
-          echo "Image: $(params.IMAGE_URL)"
-          echo "Security Scan: $(params.SCAN_RESULT)"
-          echo "This verification step runs in a trusted pipeline"
-          echo "✅ Build verification completed in trusted context"
-    params:
-    - name: IMAGE_URL
-      value: $(tasks.build.results.IMAGE_URL)
-    - name: SCAN_RESULT
-      value: $(tasks.security-scan.results.SCAN_RESULT)
-EOF
+    # Use the Pipeline YAML from k8s directory
+    TRUSTED_PIPELINE_YAML="k8s/trusted-slsa-pipeline.yaml"
+    
+    if [[ ! -f "$TRUSTED_PIPELINE_YAML" ]]; then
+        echo "Error: Trusted pipeline YAML not found at $TRUSTED_PIPELINE_YAML"
+        exit 1
+    fi
+    
+    # Copy to temp location for signing
+    cp "$TRUSTED_PIPELINE_YAML" /tmp/trusted-pipeline.yaml
 
     # Sign the Pipeline
     echo "Signing the trusted Pipeline..."

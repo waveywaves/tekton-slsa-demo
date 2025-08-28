@@ -332,20 +332,17 @@ main() {
     run_test "Recent Signing Activity Check" "test_recent_signing"
     
     # Summary
-    echo ""
-    echo "============================================"
-    echo "Validation Summary"
-    echo "============================================"
-    echo "Total tests: $TOTAL_TESTS"
-    echo "Passed: $PASSED_TESTS"
-    echo "Failed: $FAILED_TESTS"
-    echo ""
+    # echo ""
+    # echo "============================================"
+    # echo "Validation Summary"
+    # echo "============================================"
+    # echo "Total tests: $TOTAL_TESTS"
+    # echo "Passed: $PASSED_TESTS"
+    # echo "Failed: $FAILED_TESTS"
+    # echo ""
     
     if [[ $FAILED_TESTS -eq 0 ]]; then
-        print_status "PASS" "All critical components are working correctly!"
         echo ""
-        echo "System is ready for SLSA demo execution!"
-        echo "You can run: ./scripts/08-run-complete-slsa-pipeline.sh"
         exit 0
     else
         print_status "FAIL" "Some components have issues"

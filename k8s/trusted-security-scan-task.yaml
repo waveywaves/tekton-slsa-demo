@@ -1,0 +1,59 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: trusted-security-scan
+  namespace: default
+  labels:
+    trusted-resource: "true"
+    security-level: "high"
+spec:
+  description: "A trusted task for security scanning with verified provenance"
+  params:
+  - name: SOURCE_URL
+    description: "URL of the source to scan"
+    type: string
+    default: "https://github.com/waveywaves/tekton-slsa-demo"
+  - name: SCAN_TYPE
+    description: "Type of security scan to perform"
+    type: string
+    default: "vulnerability"
+  results:
+  - name: SCAN_RESULT
+    description: "Result of the security scan"
+  - name: CRITICAL_ISSUES
+    description: "Number of critical security issues found"
+  steps:
+  - name: security-scan
+    image: alpine:3.18
+    script: |
+      #!/bin/sh
+      set -ex
+      
+      echo "=== Trusted Security Scan ==="
+      echo "Source URL: $(params.SOURCE_URL)"
+      echo "Scan Type: $(params.SCAN_TYPE)"
+      echo "Task is cryptographically signed and verified"
+      
+      # Simulate comprehensive security scanning
+      echo "1. Dependency vulnerability scan..."
+      sleep 2
+      echo "2. Static code analysis..."
+      sleep 2
+      echo "3. License compliance check..."
+      sleep 1
+      echo "4. Secret detection scan..."
+      sleep 1
+      
+      # Generate scan results
+      CRITICAL_COUNT=0
+      SCAN_STATUS="passed"
+      
+      echo "=== Security Scan Results ==="
+      echo "Status: $SCAN_STATUS"
+      echo "Scan completed by trusted, signed Task"
+      
+      # Write results
+      echo -n "$SCAN_STATUS" > $(results.SCAN_RESULT.path)
+      echo -n "$CRITICAL_COUNT" > $(results.CRITICAL_ISSUES.path)
+      
+      echo "✅ Trusted security scan completed"

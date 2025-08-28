@@ -1,0 +1,82 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: trusted-slsa-pipeline
+  namespace: default
+  labels:
+    trusted-resource: "true"
+    security-level: "high"
+spec:
+  description: "A trusted pipeline with signed Tasks for SLSA compliance"
+  params:
+  - name: SOURCE_URL
+    description: "URL of the source repository"
+    type: string
+    default: "https://github.com/waveywaves/tekton-slsa-demo"
+  - name: IMAGE_NAME
+    description: "Name of the container image"
+    type: string
+    default: "ttl.sh/tekton-slsa-demo"
+  - name: IMAGE_TAG
+    description: "Tag for the container image"
+    type: string
+    default: "trusted"
+  workspaces:
+  - name: shared-workspace
+    description: "Shared workspace for pipeline tasks"
+  results:
+  - name: IMAGE_URL
+    description: "URL of the built image"
+    value: $(tasks.build.results.IMAGE_URL)
+  - name: SECURITY_SCAN_RESULT
+    description: "Result of security scanning"
+    value: $(tasks.security-scan.results.SCAN_RESULT)
+  tasks:
+  - name: security-scan
+    taskRef:
+      name: trusted-security-scan
+      kind: Task
+    params:
+    - name: SOURCE_URL
+      value: $(params.SOURCE_URL)
+    - name: SCAN_TYPE
+      value: "comprehensive"
+  - name: build
+    runAfter: ["security-scan"]
+    when:
+    - input: "$(tasks.security-scan.results.SCAN_RESULT)"
+      operator: in
+      values: ["passed", "warning"]
+    taskRef:
+      name: keyless-build-sign
+      kind: Task
+    params:
+    - name: IMAGE_NAME
+      value: $(params.IMAGE_NAME)
+    - name: IMAGE_TAG
+      value: $(params.IMAGE_TAG)
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+  - name: verify-build
+    runAfter: ["build"]
+    taskSpec:
+      params:
+      - name: IMAGE_URL
+      - name: SCAN_RESULT
+      steps:
+      - name: verify
+        image: alpine:3.18
+        script: |
+          #!/bin/sh
+          set -ex
+          echo "=== Verifying Trusted Build ==="
+          echo "Image: $(params.IMAGE_URL)"
+          echo "Security Scan: $(params.SCAN_RESULT)"
+          echo "This verification step runs in a trusted pipeline"
+          echo "✅ Build verification completed in trusted context"
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build.results.IMAGE_URL)
+    - name: SCAN_RESULT
+      value: $(tasks.security-scan.results.SCAN_RESULT)
